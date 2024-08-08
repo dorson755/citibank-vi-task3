@@ -24,8 +24,8 @@ dependencies {
     // This dependency is used by the application.
     implementation libs.guava
 
-    // This dependency is for the Yahoo Finance API
-    implementation group: 'com.yahoofinance-api', name: 'YahooFinanceAPI', version: '3.17.0'
+    // This to help with using the Alpha Vantage API
+    implementation 'org.json:json:20210307'
 
 }
 
