@@ -27,9 +27,9 @@ dependencies {
     // This to help with using the Alpha Vantage API
     implementation 'org.json:json:20210307'
     
-    // Dependency for JavaFX
-    implementation 'org.openjfx:javafx-controls:19.0.2'
-    implementation 'org.openjfx:javafx-graphics:19.0.2'
+    // This is for visualization of data
+    implementation 'org.jfree:jfreechart:1.5.4'  // Add this line for JFreeChart
+
 }
 
 // Apply a specific Java toolchain to ease working on different environments.

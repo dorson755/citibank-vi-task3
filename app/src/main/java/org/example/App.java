@@ -1,92 +1,136 @@
 package org.example;
 
-import javafx.application.Application;
-import javafx.scene.Scene;
-import javafx.scene.chart.LineChart;
-import javafx.scene.chart.NumberAxis;
-import javafx.scene.chart.XYChart;
-import javafx.stage.Stage;
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.ChartPanel;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.plot.PlotOrientation;
+import org.jfree.data.xy.XYSeries;
+import org.jfree.data.xy.XYSeriesCollection;
 import org.json.JSONObject;
+
+import javax.swing.*;
+import java.awt.*;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.time.Instant;
+import java.time.LocalDateTime;
+import java.util.LinkedList;
+import java.util.Queue;
 import java.util.Timer;
 import java.util.TimerTask;
 
-public class App extends Application {
-    private static final String ALPHA_VANTAGE_API_KEY = "C29W07NX5HQL49UI";
-    private static final String STOCK_SYMBOL = "DOW";
-    private static final String API_URL = "https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=" + STOCK_SYMBOL + "&interval=1min&apikey=" + ALPHA_VANTAGE_API_KEY;
+public class App {
+    private static final String ALPHA_VANTAGE_API_KEY = "C29W07NX5HQL49UI"; // Replace with your actual API key
+    private static final String SYMBOL = "DOW"; // Dow Jones Industrial Average symbol
+    private static final Queue<StockData> stockDataQueue = new LinkedList<>();
+    private static XYSeries series;
 
-    private XYChart.Series<Number, Number> series = new XYChart.Series<>();
+    public static void main(String[] args) {
+        // Initialize the chart
+        series = new XYSeries("Stock Price");
+        XYSeriesCollection dataset = new XYSeriesCollection(series);
+        JFreeChart chart = ChartFactory.createXYLineChart(
+            "Stock Price Chart",
+            "Time",
+            "Price",
+            dataset,
+            PlotOrientation.VERTICAL,
+            true,
+            true,
+            false
+        );
 
-    @Override
-    public void start(Stage stage) {
-        stage.setTitle("Live Stock Price Chart");
+        // Create and set up the chart panel
+        ChartPanel chartPanel = new ChartPanel(chart);
+        chartPanel.setPreferredSize(new Dimension(800, 600));
 
-        NumberAxis xAxis = new NumberAxis();
-        NumberAxis yAxis = new NumberAxis();
-        xAxis.setLabel("Time");
-        yAxis.setLabel("Stock Price");
+        // Create and set up the frame
+        JFrame frame = new JFrame("Stock Price Monitoring");
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.add(chartPanel, BorderLayout.CENTER);
+        frame.pack();
+        frame.setVisible(true);
 
-        LineChart<Number, Number> lineChart = new LineChart<>(xAxis, yAxis);
-        lineChart.setTitle("Stock Price Over Time");
-
-        series.setName("Stock Price");
-        lineChart.getData().add(series);
-
-        Scene scene = new Scene(lineChart, 800, 600);
-        stage.setScene(scene);
-        stage.show();
-
-        // Timer to query stock price every 5 seconds
-        Timer timer = new Timer(true);
+        Timer timer = new Timer();
         timer.scheduleAtFixedRate(new TimerTask() {
             @Override
             public void run() {
-                queryStockPrice();
+                try {
+                    queryStockPrice();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
             }
-        }, 0, 5000);
+        }, 0, 5000); // Query every 5 seconds
     }
 
-    private void queryStockPrice() {
-        try {
-            URL url = new URL(API_URL);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
+    private static void queryStockPrice() throws Exception {
+        String url = String.format("https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=%s&interval=1min&apikey=%s", SYMBOL, ALPHA_VANTAGE_API_KEY);
+        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        connection.setRequestMethod("GET");
 
-            BufferedReader in = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-            StringBuilder response = new StringBuilder();
-            String line;
-            while ((line = in.readLine()) != null) {
-                response.append(line);
+        // Check for response code
+        int responseCode = connection.getResponseCode();
+        if (responseCode != HttpURLConnection.HTTP_OK) {
+            System.out.println("HTTP GET request failed with code: " + responseCode);
+            BufferedReader errorStream = new BufferedReader(new InputStreamReader(connection.getErrorStream()));
+            StringBuilder errorResponse = new StringBuilder();
+            String errorLine;
+            while ((errorLine = errorStream.readLine()) != null) {
+                errorResponse.append(errorLine);
             }
-            in.close();
+            errorStream.close();
+            System.out.println("Error Response: " + errorResponse.toString());
+            return;
+        }
 
-            JSONObject jsonResponse = new JSONObject(response.toString());
-            JSONObject timeSeries = jsonResponse.getJSONObject("Time Series (1min)");
+        BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+        String inputLine;
+        StringBuilder response = new StringBuilder();
+        while ((inputLine = in.readLine()) != null) {
+            response.append(inputLine);
+        }
+        in.close();
 
-            // Extract the most recent data point
-            String mostRecentTime = timeSeries.keys().next();
-            JSONObject mostRecentData = timeSeries.getJSONObject(mostRecentTime);
-            double price = mostRecentData.getDouble("1. open");
+        // Print the full JSON response for debugging
+        System.out.println("Full JSON Response: " + response.toString());
 
-            // Update chart
-            javafx.application.Platform.runLater(() -> {
-                series.getData().add(new XYChart.Data<>(Instant.now().getEpochSecond(), price));
-                if (series.getData().size() > 100) {
-                    series.getData().remove(0); // Keep only the last 100 data points
-                }
-            });
+        JSONObject json = new JSONObject(response.toString());
 
-        } catch (Exception e) {
-            e.printStackTrace();
+        // Print the keys to check available data
+        System.out.println("JSON Keys: " + json.keySet());
+
+        if (json.has("Time Series (1min)")) {
+            JSONObject timeSeries = json.getJSONObject("Time Series (1min)");
+            String latestTime = timeSeries.keys().next();
+            double price = timeSeries.getJSONObject(latestTime).getDouble("1. open");
+            LocalDateTime timestamp = LocalDateTime.now();
+            stockDataQueue.add(new StockData(price, timestamp));
+            System.out.println("Queried at " + timestamp + ": " + price);
+
+            // Update the chart
+            series.add(System.currentTimeMillis(), price);
+        } else {
+            System.out.println("Key 'Time Series (1min)' not found in the response.");
         }
     }
 
-    public static void main(String[] args) {
-        launch(args);
+    private static class StockData {
+        double price;
+        LocalDateTime timestamp;
+
+        StockData(double price, LocalDateTime timestamp) {
+            this.price = price;
+            this.timestamp = timestamp;
+        }
+
+        @Override
+        public String toString() {
+            return "StockData{" +
+                    "price=" + price +
+                    ", timestamp=" + timestamp +
+                    '}';
+        }
     }
 }
